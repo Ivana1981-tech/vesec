@@ -37,3 +37,21 @@ export const JZ_COLS = [
   { key: 'zpusob_platby', label: 'Platba', type: 'select', options: PLATBA, nullable: true },
   { key: 'poznamka', label: 'Poznámka', type: 'text', wide: true },
 ]
+
+export const UKOLY_COLS = [
+  { key: 'nazev', label: 'Úkol', type: 'text', required: true, wide: true },
+  { key: 'odpovedny', label: 'Kdo', type: 'text', default: 'Iva' },
+  { key: 'termin', label: 'Termín', type: 'date' },
+  {
+    key: 'stav', label: 'Stav', type: 'select', default: 'otevreny',
+    options: [
+      { value: 'otevreny', label: 'otevřený' },
+      { value: 'rozpracovany', label: 'rozpracovaný' },
+      { value: 'hotovo', label: 'hotovo' },
+    ],
+  },
+  { key: 'hotovo_dne', label: 'Hotovo dne', type: 'date' },
+  { key: 'popis', label: 'Popis', type: 'text', wide: true },
+  { key: 'odkaz', label: 'Odkaz', type: 'text', link: true },
+  { key: 'poznamka', label: 'Poznámka', type: 'text', wide: true },
+]

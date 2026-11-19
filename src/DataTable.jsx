@@ -4,8 +4,8 @@ import { display, money, parseMoney } from './format'
 
 // Univerzální tabulka: editace v buňce, víceúrovňové třídění, filtry,
 // seskupení se mezisoučty, přidání řádku, příznak „smazat“.
-export default function DataTable({ table, cols, rows, setRows, title }) {
-  const [sorts, setSorts] = useState([{ key: 'datum', dir: 'desc' }])
+export default function DataTable({ table, cols, rows, setRows, title, defaultSort = [{ key: 'datum', dir: 'desc' }], rowClass, onSaved }) {
+  const [sorts, setSorts] = useState(defaultSort)
   const [filters, setFilters] = useState({})
   const [search, setSearch] = useState('')
   const [groups, setGroups] = useState(['', ''])
@@ -77,6 +77,8 @@ export default function DataTable({ table, cols, rows, setRows, title }) {
     })
   }, [rows, cols, filters, search, sorts, groups, showDeleted])
 
+  const hasMoney = cols.some((c) => c.key === 'castka')
+  const moneyIdx = hasMoney ? cols.findIndex((c) => c.key === 'castka') : cols.length
   const total = visible.reduce((s, r) => s + Number(r.castka || 0), 0)
   const filtersActive = search || Object.values(filters).some((f) => f && Object.values(f).some((v) => v !== '' && v !== undefined))
 
@@ -105,6 +107,7 @@ export default function DataTable({ table, cols, rows, setRows, title }) {
     if (error) { setErr('Uložení selhalo: ' + error.message); return }
     setRows((rs) => rs.map((r) => (r.id === row.id ? data : r)))
     setEditing(null)
+    onSaved?.(data, col.key)
   }
 
   async function toggleDelete(row) {
@@ -177,7 +180,7 @@ export default function DataTable({ table, cols, rows, setRows, title }) {
     const start = () => setEditing({ id: row.id, key: col.key, value: col.type === 'money' ? String(raw ?? '').replace('.', ',') : raw ?? '' })
     return (
       <td key={col.key} className={(col.type === 'money' ? 'num ' : '') + (col.wide ? 'wide' : '')} onClick={start} title="Klikni pro úpravu">
-        {display(col, raw)}
+        {col.link && raw ? <a href={raw} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>otevřít</a> : display(col, raw)}
       </td>
     )
   }
@@ -319,12 +322,12 @@ export default function DataTable({ table, cols, rows, setRows, title }) {
             {body.map((b) =>
               b.type === 'group' ? (
                 <tr key={'g' + b.key} className={'group l' + b.level}>
-                  <td colSpan={cols.findIndex((c) => c.key === 'castka')}>{b.label} <span className="muted">({b.count})</span></td>
-                  <td className="num">{money(b.sum)}</td>
-                  <td colSpan={cols.length - cols.findIndex((c) => c.key === 'castka')} />
+                  <td colSpan={moneyIdx}>{b.label} <span className="muted">({b.count})</span></td>
+                  {hasMoney && <td className="num">{money(b.sum)}</td>}
+                  <td colSpan={cols.length - moneyIdx + (hasMoney ? 0 : 1)} />
                 </tr>
               ) : (
-                <tr key={b.row.id} className={b.row.smazat ? 'deleted' : ''}>
+                <tr key={b.row.id} className={(b.row.smazat ? 'deleted ' : '') + (rowClass?.(b.row) || '')}>
                   {cols.map((c) => cell(b.row, c))}
                   <td className="c"><input type="checkbox" checked={b.row.smazat} onChange={() => toggleDelete(b.row)} /></td>
                 </tr>
@@ -333,9 +336,9 @@ export default function DataTable({ table, cols, rows, setRows, title }) {
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={cols.findIndex((c) => c.key === 'castka')}>Celkem ({visible.length} záznamů{filtersActive ? ', filtrováno' : ''})</td>
-              <td className="num">{money(total)}</td>
-              <td colSpan={cols.length - cols.findIndex((c) => c.key === 'castka')} />
+              <td colSpan={moneyIdx}>{hasMoney ? 'Celkem' : 'Počet'} ({visible.length} záznamů{filtersActive ? ', filtrováno' : ''})</td>
+              {hasMoney && <td className="num">{money(total)}</td>}
+              <td colSpan={cols.length - moneyIdx + (hasMoney ? 0 : 1)} />
             </tr>
           </tfoot>
         </table>
