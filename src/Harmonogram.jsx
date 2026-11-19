@@ -39,6 +39,8 @@ export default function Harmonogram({ rows, setRows, nastaveni, setNastaveni }) 
   const [show, setShow] = useState({ ondra: true, vzor: true, realita: true })
   const [err, setErr] = useState('')
   const [lockOndra, setLockOndra] = useState(true)
+  const [cascade, setCascade] = useState(true)
+  const [edit, setEdit] = useState(null)
   const [drag, setDrag] = useState(null) // { verze, ids:Set, x0, trackW, delta }
   const dragRef = useRef(null)
   const zahajeniStr = nastaveni.find((n) => n.klic === 'zahajeni_vzor')?.hodnota || ''
@@ -96,20 +98,22 @@ export default function Harmonogram({ rows, setRows, nastaveni, setNastaveni }) 
     return out
   }, [axisStart.getTime(), axisEnd.getTime()])
 
-  // ---------- posouvání lišt ----------
-  // Posune se chycená fáze a všechny fáze stejné verze, které začínají ve stejný den nebo později.
-  function affected(verze, id) {
-    const same = live.filter((r) => r.verze === verze)
-    const me = same.find((r) => r.id === id)
-    if (!me) return new Set()
-    if (verze === 'vzor') return new Set(same.filter((r) => r.tyden_od != null && r.tyden_od >= me.tyden_od).map((r) => r.id))
-    return new Set(same.filter((r) => r.start && r.start >= me.start).map((r) => r.id))
+  // ---------- posouvání a změna délky lišt ----------
+  // „Následující“ = fáze stejné verze, které začínají ve stejný den nebo později (bez fáze samotné).
+  function followers(verze, me) {
+    const same = live.filter((r) => r.verze === verze && r.id !== me.id)
+    if (verze === 'vzor') return same.filter((r) => r.tyden_od != null && r.tyden_od >= me.tyden_od).map((r) => r.id)
+    return same.filter((r) => r.start && me.start && r.start >= me.start).map((r) => r.id)
   }
-  function onDown(e, verze, id) {
+  const rowById = (id) => live.find((r) => r.id === id)
+
+  function onDown(e, verze, id, mode) {
     if (!id || (verze === 'ondra' && lockOndra)) return
-    e.preventDefault()
-    const trackW = e.currentTarget.parentElement.getBoundingClientRect().width
-    const d = { verze, id, ids: affected(verze, id), x0: e.clientX, trackW, delta: 0 }
+    e.preventDefault(); e.stopPropagation()
+    const me = rowById(id)
+    if (mode === 'resize' && verze !== 'vzor' && !me.konec) return
+    const trackW = e.currentTarget.closest('.gtrack').getBoundingClientRect().width
+    const d = { verze, id, mode, follow: cascade ? new Set(followers(verze, me)) : new Set(), x0: e.clientX, trackW, delta: 0, moved: false }
     dragRef.current = d
     setDrag(d)
   }
@@ -117,12 +121,22 @@ export default function Harmonogram({ rows, setRows, nastaveni, setNastaveni }) 
     if (!drag) return
     const move = (e) => {
       const d = dragRef.current
+      if (Math.abs(e.clientX - d.x0) > 3) d.moved = true
       let days = Math.round(((e.clientX - d.x0) / d.trackW) * span)
+      const me = rowById(d.id)
       if (d.verze === 'vzor') {
         let w = Math.round(days / 7)
-        const minOd = Math.min(...live.filter((r) => d.ids.has(r.id)).map((r) => r.tyden_od))
-        if (minOd + w < 1) w = 1 - minOd
+        if (d.mode === 'move') {
+          const minOd = Math.min(me.tyden_od, ...live.filter((r) => d.follow.has(r.id)).map((r) => r.tyden_od))
+          if (minOd + w < 1) w = 1 - minOd
+        } else {
+          const len = (me.tyden_do ?? me.tyden_od) - me.tyden_od
+          if (len + w < 0) w = -len
+        }
         days = w * 7
+      } else if (d.mode === 'resize') {
+        const len = Math.round((toD(me.konec) - toD(me.start)) / DAY)
+        if (len + days < 0) days = -len
       }
       if (days !== d.delta) { d.delta = days; setDrag({ ...d }) }
     }
@@ -132,53 +146,105 @@ export default function Harmonogram({ rows, setRows, nastaveni, setNastaveni }) 
       const d = dragRef.current
       dragRef.current = null
       setDrag(null)
-      if (!d || !d.delta) return
-      await persistShift(d)
+      if (!d) return
+      if (!d.moved) { openEditor(d.verze, d.id); return }
+      if (!d.delta) return
+      await applyChange(d.verze, d.id, d.mode === 'move' ? d.delta : 0, d.delta, d.follow)
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
     return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
-  }, [drag?.id, drag?.verze])
+  }, [drag?.id, drag?.verze, drag?.mode])
 
-  async function persistShift(d) {
+  // dStart/dEnd ve dnech (u vzoru násobky 7); následující fáze se posunou o dEnd
+  async function applyChange(verze, id, dStart, dEnd, follow) {
     setErr('')
-    const targets = live.filter((r) => d.ids.has(r.id))
-    const updates = targets.map((r) => {
-      if (d.verze === 'vzor') {
-        const w = d.delta / 7
-        return { id: r.id, rec: { tyden_od: r.tyden_od + w, tyden_do: (r.tyden_do ?? r.tyden_od) + w } }
-      }
+    const updates = []
+    const shiftRec = (r, ds, de) => {
+      if (verze === 'vzor') return { tyden_od: r.tyden_od + ds / 7, tyden_do: (r.tyden_do ?? r.tyden_od) + de / 7 }
       return {
-        id: r.id,
-        rec: { start: r.start ? iso(addDays(toD(r.start), d.delta)) : null, konec: r.konec ? iso(addDays(toD(r.konec), d.delta)) : null },
+        start: r.start ? iso(addDays(toD(r.start), ds)) : null,
+        konec: r.konec ? iso(addDays(toD(r.konec), de)) : null,
       }
-    })
-    // okamžitě v obrazovce, pak uložit
+    }
+    const me = rowById(id)
+    updates.push({ id, rec: shiftRec(me, dStart, dEnd) })
+    if (dEnd) for (const r of live.filter((r) => follow.has(r.id))) updates.push({ id: r.id, rec: shiftRec(r, dEnd, dEnd) })
     setRows((rs) => rs.map((r) => { const u = updates.find((x) => x.id === r.id); return u ? { ...r, ...u.rec } : r }))
     const res = await Promise.all(updates.map((u) => supabase.from('harmonogram').update(u.rec).eq('id', u.id)))
     const bad = res.find((x) => x.error)
-    if (bad) setErr('Uložení posunu selhalo: ' + bad.error.message + ' – obnov stránku.')
+    if (bad) setErr('Uložení selhalo: ' + bad.error.message + ' – obnov stránku.')
   }
-  const sh = (verze, id, date) => (drag && drag.verze === verze && drag.ids.has(id) && date ? addDays(date, drag.delta) : date)
+
+  // Náhled během tažení
+  const sh = (verze, id, date, isEnd) => {
+    if (!drag || drag.verze !== verze || !date) return date
+    if (id === drag.id) return drag.mode === 'move' || isEnd ? addDays(date, drag.delta) : date
+    return drag.follow.has(id) ? addDays(date, drag.delta) : date
+  }
+
+  // ---------- editor fáze po kliknutí ----------
+  function openEditor(verze, id) {
+    if (verze === 'ondra' && lockOndra) return
+    const r = rowById(id)
+    setEdit({ verze, id, faze: r.faze, start: r.start || '', konec: r.konec || '', tyden_od: r.tyden_od ?? '', tyden_do: r.tyden_do ?? '' })
+  }
+  async function saveEditor() {
+    const r = rowById(edit.id)
+    if (edit.verze === 'vzor') {
+      const od = parseInt(edit.tyden_od, 10), dd = parseInt(edit.tyden_do, 10)
+      if (!(od >= 1) || !(dd >= od)) { setErr('Týden do musí být ≥ týden od a týden od ≥ 1'); return }
+      const ds = (od - r.tyden_od) * 7, de = (dd - (r.tyden_do ?? r.tyden_od)) * 7
+      const follow = cascade ? new Set(followers('vzor', r)) : new Set()
+      await applyChange('vzor', r.id, ds, de, follow)
+    } else {
+      if (!edit.start) { setErr('Začátek je povinný'); return }
+      if (edit.konec && edit.konec < edit.start) { setErr('Konec nesmí být před začátkem'); return }
+      const ds = r.start ? Math.round((toD(edit.start) - toD(r.start)) / DAY) : 0
+      const de = r.konec && edit.konec ? Math.round((toD(edit.konec) - toD(r.konec)) / DAY) : 0
+      const follow = cascade && r.start ? new Set(followers(edit.verze, r)) : new Set()
+      // nejdřív samotná fáze přesně podle zadání, pak následující o změnu konce
+      setRows((rs) => rs.map((x) => (x.id === r.id ? { ...x, start: edit.start, konec: edit.konec || null } : x)))
+      const { error } = await supabase.from('harmonogram').update({ start: edit.start, konec: edit.konec || null }).eq('id', r.id)
+      if (error) { setErr('Uložení selhalo: ' + error.message); return }
+      if (de && follow.size) {
+        const ups = live.filter((x) => follow.has(x.id)).map((x) => ({
+          id: x.id,
+          rec: { start: x.start ? iso(addDays(toD(x.start), de)) : null, konec: x.konec ? iso(addDays(toD(x.konec), de)) : null },
+        }))
+        setRows((rs) => rs.map((x) => { const u = ups.find((y) => y.id === x.id); return u ? { ...x, ...u.rec } : x }))
+        await Promise.all(ups.map((u) => supabase.from('harmonogram').update(u.rec).eq('id', u.id)))
+      }
+      void ds
+    }
+    setEdit(null)
+  }
 
   const bar = (s, e, cls, title, verze, id) => {
     if (!s) return null
-    s = sh(verze, id, s); e = sh(verze, id, e)
-    const end = e || today
-    const w = Math.max(0.4, pct(addDays(end, 1)) - pct(s))
+    const s2 = sh(verze, id, s, false), e2 = sh(verze, id, e, true)
+    const end = e2 || today
+    const w = Math.max(0.4, pct(addDays(end, 1)) - pct(s2))
     const movable = id && !(verze === 'ondra' && lockOndra)
-    const moving = drag && drag.verze === verze && drag.ids.has(id)
-    const tip = moving ? `${title} → posun ${drag.delta > 0 ? '+' : ''}${drag.verze === 'vzor' ? drag.delta / 7 + ' t' : drag.delta + ' d'}` : title
+    const active = drag && drag.verze === verze && (drag.id === id || drag.follow.has(id))
+    let tip = title + (movable ? ' · klik = upravit, táhni = posunout, pravý okraj = délka' : '')
+    if (active && drag.id === id) {
+      const u = drag.verze === 'vzor' ? `${drag.delta / 7} t` : `${drag.delta} d`
+      tip = `${drag.mode === 'move' ? 'posun' : 'délka'} ${drag.delta > 0 ? '+' : ''}${u}`
+    }
     return (
       <div
-        className={'gbar ' + cls + (e ? '' : ' open') + (movable ? ' movable' : '') + (moving ? ' moving' : '')}
-        style={{ left: pct(s) + '%', width: w + '%' }}
+        className={'gbar ' + cls + (e ? '' : ' open') + (movable ? ' movable' : '') + (active ? ' moving' : '')}
+        style={{ left: pct(s2) + '%', width: w + '%' }}
         title={tip}
-        onPointerDown={(ev) => onDown(ev, verze, id)}
-      />
+        onPointerDown={(ev) => onDown(ev, verze, id, 'move')}
+      >
+        {movable && (verze === 'vzor' || e) && (
+          <span className="ghandle" onPointerDown={(ev) => onDown(ev, verze, id, 'resize')} />
+        )}
+      </div>
     )
   }
-  const rng = (s, e) => (s ? `${fmtDate(iso(s))} – ${e ? fmtDate(iso(e)) : 'probíhá'}` : 'bez termínu')
 
   const Grid = () => (
     <div className="ggrid">
@@ -202,8 +268,32 @@ export default function Harmonogram({ rows, setRows, nastaveni, setNastaveni }) 
         <label className="chk"><input type="checkbox" checked={show.vzor} onChange={(e) => setShow({ ...show, vzor: e.target.checked })} /> <span className="lg vzor" /> Vzor</label>
         <label className="chk"><input type="checkbox" checked={show.realita} onChange={(e) => setShow({ ...show, realita: e.target.checked })} /> <span className="lg realita" /> Realita</label>
         <label className="chk"><input type="checkbox" checked={lockOndra} onChange={(e) => setLockOndra(e.target.checked)} /> 🔒 zamknout plán Ondry</label>
+        <label className="chk"><input type="checkbox" checked={cascade} onChange={(e) => setCascade(e.target.checked)} /> posouvat i následující fáze</label>
       </div>
-      <p className="hint">Lištu chytni myší a posuň – stejně se posunou i všechny následující fáze téže verze. Vzor se posouvá po týdnech, realita a Ondra po dnech.</p>
+      <p className="hint">
+        Klik na lištu = upravit termíny · táhnutí lišty = posun · táhnutí pravého okraje = změna délky. Následující fáze téže verze se posunou o stejnou dobu.
+        Vzor po týdnech, realita a Ondra po dnech.
+      </p>
+      {edit && (
+        <div className="gedit">
+          <b>{edit.faze}</b> <span className="muted small">({edit.verze === 'vzor' ? 'vzor' : edit.verze === 'ondra' ? 'Ondra' : 'realita'})</span>
+          {edit.verze === 'vzor' ? (
+            <>
+              <label>Týden od<input className="short num" value={edit.tyden_od} onChange={(e) => setEdit({ ...edit, tyden_od: e.target.value })} /></label>
+              <label>Týden do<input className="short num" value={edit.tyden_do} onChange={(e) => setEdit({ ...edit, tyden_do: e.target.value })} /></label>
+              <span className="small muted">délka {Math.max(0, (parseInt(edit.tyden_do, 10) || 0) - (parseInt(edit.tyden_od, 10) || 0) + 1)} t</span>
+            </>
+          ) : (
+            <>
+              <label>Začátek<input type="date" value={edit.start} onChange={(e) => setEdit({ ...edit, start: e.target.value })} /></label>
+              <label>Konec<input type="date" value={edit.konec} onChange={(e) => setEdit({ ...edit, konec: e.target.value })} /></label>
+              {edit.start && edit.konec && <span className="small muted">délka {Math.round((toD(edit.konec) - toD(edit.start)) / DAY) + 1} d</span>}
+            </>
+          )}
+          <button className="primary" onClick={saveEditor}>Uložit</button>
+          <button onClick={() => setEdit(null)}>Zrušit</button>
+        </div>
+      )}
       {err && <div className="error">{err}</div>}
 
       <div className="gantt">
