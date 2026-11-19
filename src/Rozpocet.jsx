@@ -22,15 +22,17 @@ const sumDph = (rows) => rows.reduce((s, r) => s + Number(r.castka || 0) * (1 + 
 
 export default function Rozpocet({ rows, setRows, vydaje }) {
   const live = rows.filter((r) => !r.smazat)
-  const v = (k) => live.filter((r) => r.verze === k)
-  const card = (k, label) => {
-    const r = v(k)
+  const VAR = 'Varianta – hliníková okna'
+  const v = (k) => live.filter((r) => r.verze === k && r.skupina !== VAR)
+  const alu = live.filter((r) => r.verze === 'propocet')
+  const card = (k, label, rowsOverride) => {
+    const r = rowsOverride || v(k)
     return (
       <div className="card">
         <div className="lbl">{label}</div>
         <div className="val">{money0(sumDph(r))}</div>
         <div className="small muted">
-          stavba {money0(sum(r, (x) => x.skupina === 'Stavba'))} bez DPH · ostatní {money0(sum(r, (x) => x.skupina !== 'Stavba'))}
+          stavba {money0(sum(r, (x) => x.skupina === 'Stavba' || x.skupina === VAR))} bez DPH · ostatní {money0(sum(r, (x) => x.skupina !== 'Stavba'))}
         </div>
       </div>
     )
@@ -43,7 +45,8 @@ export default function Rozpocet({ rows, setRows, vydaje }) {
       <div className="page-head"><h1>Rozpočet</h1></div>
       <div className="cards">
         {card('ondra', 'Ondra v02 (26. 5. 2026) – celkem vč. DPH')}
-        {card('propocet', 'Propočet podle ukazatelů RTS 2026 – celkem vč. DPH')}
+        {card('propocet', 'Propočet RTS 2026 – plastová okna – celkem vč. DPH')}
+        {card('propocet', 'Propočet RTS 2026 – hliníková okna – celkem vč. DPH', alu)}
         <div className="card">
           <div className="lbl">Zatím zapsané odlivy</div>
           <div className="val">{money0(odlivy)}</div>
@@ -52,8 +55,8 @@ export default function Rozpocet({ rows, setRows, vydaje }) {
       </div>
       <p className="muted small">
         Propočet = orientační cena podle cenových ukazatelů RTS 2026 (JKSO 803.6 rodinné domy, nosná konstrukce dřevěná,
-        9 920 Kč/m³ obestavěného prostoru bez DPH). Obestavěný prostor je zatím jen odhad – přesné číslo spočítám z výkresů.
-        Ostatní položky jsou převzaté z Ondrova rozpočtu.
+        9 920 Kč/m³ obestavěného prostoru bez DPH) × 670 m³ změřených ze studie. Ostatní položky jsou převzaté z Ondrova
+        rozpočtu. Varianta s hliníkovými okny přičítá příplatek ze skupiny „Varianta – hliníková okna“.
       </p>
       <DataTable
         title=""
