@@ -171,3 +171,6 @@ td.ro { background: #faf9f7; cursor: default; }
 
 tr.muted-row td { opacity: .45; }
 .ptext { white-space: pre-wrap; font: 13px/1.5 -apple-system, sans-serif; background: #faf9f7; border: 1px solid var(--line); border-radius: 6px; padding: 12px; max-height: 360px; overflow: auto; margin: 0; }
+
+.gbar.movable { cursor: grab; touch-action: none; }
+.gbar.moving { cursor: grabbing; outline: 2px solid rgba(0,0,0,.35); z-index: 3; }
