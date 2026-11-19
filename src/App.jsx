@@ -5,6 +5,8 @@ import Prehled from './Prehled'
 import Harmonogram from './Harmonogram'
 import Smlouvy from './Smlouvy'
 import Rozpocet from './Rozpocet'
+import Polozkovy from './Polozkovy'
+import Poptavky from './Poptavky'
 import { VYDAJE_COLS, JZ_COLS, UKOLY_COLS } from './columns'
 
 const MENU = [
@@ -12,6 +14,8 @@ const MENU = [
   { id: 'vydaje', label: 'Výdaje' },
   { id: 'jitka', label: 'Jitka' },
   { id: 'rozpocet', label: 'Rozpočet' },
+  { id: 'polozkovy', label: 'Položkový rozpočet' },
+  { id: 'poptavky', label: 'Poptávky' },
   { id: 'harmonogram', label: 'Harmonogram' },
   { id: 'ukoly', label: 'Úkoly' },
   { id: 'smlouvy', label: 'Smlouvy' },
@@ -52,6 +56,8 @@ export default function App() {
   const [nastaveni, setNastaveni] = useState([])
   const [smlouvy, setSmlouvy] = useState([])
   const [rozpocet, setRozpocet] = useState([])
+  const [vykaz, setVykaz] = useState([])
+  const [poptavky, setPoptavky] = useState([])
   const [loadErr, setLoadErr] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -66,7 +72,7 @@ export default function App() {
     if (!session) return
     ;(async () => {
       setLoadErr('')
-      const [a, b, c, d, n, sm, rz] = await Promise.all([
+      const [a, b, c, d, n, sm, rz, vk, pp] = await Promise.all([
         supabase.from('vydaje').select('*'),
         supabase.from('pohyby_jz').select('*'),
         supabase.from('ukoly').select('*'),
@@ -74,8 +80,10 @@ export default function App() {
         supabase.from('nastaveni').select('*'),
         supabase.from('smlouvy').select('*'),
         supabase.from('rozpocet').select('*'),
+        supabase.from('vykaz').select('*'),
+        supabase.from('poptavky').select('*'),
       ])
-      const e = a.error || b.error || c.error || d.error || n.error || sm.error || rz.error
+      const e = a.error || b.error || c.error || d.error || n.error || sm.error || rz.error || vk.error || pp.error
       if (e) setLoadErr('Data se nepodařilo načíst: ' + e.message)
       setVydaje(a.data || [])
       setJz(b.data || [])
@@ -84,6 +92,8 @@ export default function App() {
       setNastaveni(n.data || [])
       setSmlouvy(sm.data || [])
       setRozpocet(rz.data || [])
+      setVykaz(vk.data || [])
+      setPoptavky(pp.data || [])
     })()
   }, [session])
 
@@ -139,6 +149,8 @@ export default function App() {
           <Harmonogram rows={harm} setRows={setHarm} nastaveni={nastaveni} setNastaveni={setNastaveni} />
         )}
         {current.id === 'rozpocet' && <Rozpocet rows={rozpocet} setRows={setRozpocet} vydaje={vydaje} />}
+        {current.id === 'polozkovy' && <Polozkovy rows={vykaz} setRows={setVykaz} />}
+        {current.id === 'poptavky' && <Poptavky vykaz={vykaz} rows={poptavky} setRows={setPoptavky} />}
         {current.id === 'smlouvy' && <Smlouvy rows={smlouvy} setRows={setSmlouvy} />}
         {current.soon && (
           <div className="page"><div className="page-head"><h1>{current.label}</h1></div>

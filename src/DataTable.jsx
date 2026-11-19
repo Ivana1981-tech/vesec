@@ -128,18 +128,19 @@ export default function DataTable({ table, cols, rows, setRows, title, defaultSo
 
   function startAdd() {
     const blank = {}
-    for (const c of cols) blank[c.key] = c.default ?? (c.type === 'date' && c.key === 'datum' ? new Date().toISOString().slice(0, 10) : c.type === 'bool' ? false : '')
+    for (const c of cols.filter((c) => !c.readonly)) blank[c.key] = c.default ?? (c.type === 'date' && c.key === 'datum' ? new Date().toISOString().slice(0, 10) : c.type === 'bool' ? false : '')
     setAdding(blank)
   }
 
   async function saveNew() {
     setErr('')
     const rec = {}
-    try { for (const c of cols) rec[c.key] = toDb(c, adding[c.key]) } catch (e) { setErr(e.message); return }
+    try { for (const c of cols.filter((c) => !c.readonly)) rec[c.key] = toDb(c, adding[c.key]) } catch (e) { setErr(e.message); return }
     const { data, error } = await supabase.from(table).insert(rec).select().single()
     if (error) { setErr('Uložení selhalo: ' + error.message); return }
     setRows((rs) => [data, ...rs])
     setAdding(null)
+    onSaved?.(data, null)
   }
 
   // ---------- vykreslení ----------
@@ -186,6 +187,8 @@ export default function DataTable({ table, cols, rows, setRows, title, defaultSo
         </td>
       )
     const raw = row[col.key]
+    if (col.readonly)
+      return <td key={col.key} className={(col.type === 'money' ? 'num ' : '') + 'ro'}>{display(col, raw)}</td>
     const start = () => setEditing({ id: row.id, key: col.key, value: col.type === 'money' ? String(raw ?? '').replace('.', ',') : raw ?? '' })
     return (
       <td key={col.key} className={(col.type === 'money' ? 'num ' : '') + (col.wide ? 'wide' : '')} onClick={start} title="Klikni pro úpravu">
@@ -225,7 +228,7 @@ export default function DataTable({ table, cols, rows, setRows, title, defaultSo
   return (
     <div className="page">
       <div className="page-head">
-        <h1>{title}</h1>
+        {title ? <h1>{title}</h1> : <span />}
         <button className="primary" onClick={startAdd} disabled={!!adding}>+ Přidat záznam</button>
       </div>
 
@@ -258,7 +261,7 @@ export default function DataTable({ table, cols, rows, setRows, title, defaultSo
 
       {adding && (
         <div className="addform">
-          {cols.map((c) => (
+          {cols.filter((c) => !c.readonly).map((c) => (
             <label key={c.key} className={c.wide ? 'wide' : ''}>
               {c.label}{c.required ? ' *' : ''}
               {editor({ col: c, value: adding[c.key], onChange: (v) => setAdding((a) => ({ ...a, [c.key]: v })) })}
