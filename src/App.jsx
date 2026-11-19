@@ -4,13 +4,14 @@ import DataTable from './DataTable'
 import Prehled from './Prehled'
 import Harmonogram from './Harmonogram'
 import Smlouvy from './Smlouvy'
+import Rozpocet from './Rozpocet'
 import { VYDAJE_COLS, JZ_COLS, UKOLY_COLS } from './columns'
 
 const MENU = [
   { id: 'prehled', label: 'Přehled' },
   { id: 'vydaje', label: 'Výdaje' },
   { id: 'jitka', label: 'Jitka' },
-  { id: 'rozpocet', label: 'Rozpočet', soon: true },
+  { id: 'rozpocet', label: 'Rozpočet' },
   { id: 'harmonogram', label: 'Harmonogram' },
   { id: 'ukoly', label: 'Úkoly' },
   { id: 'smlouvy', label: 'Smlouvy' },
@@ -50,6 +51,7 @@ export default function App() {
   const [harm, setHarm] = useState([])
   const [nastaveni, setNastaveni] = useState([])
   const [smlouvy, setSmlouvy] = useState([])
+  const [rozpocet, setRozpocet] = useState([])
   const [loadErr, setLoadErr] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -64,15 +66,16 @@ export default function App() {
     if (!session) return
     ;(async () => {
       setLoadErr('')
-      const [a, b, c, d, n, sm] = await Promise.all([
+      const [a, b, c, d, n, sm, rz] = await Promise.all([
         supabase.from('vydaje').select('*'),
         supabase.from('pohyby_jz').select('*'),
         supabase.from('ukoly').select('*'),
         supabase.from('harmonogram').select('*'),
         supabase.from('nastaveni').select('*'),
         supabase.from('smlouvy').select('*'),
+        supabase.from('rozpocet').select('*'),
       ])
-      const e = a.error || b.error || c.error || d.error || n.error || sm.error
+      const e = a.error || b.error || c.error || d.error || n.error || sm.error || rz.error
       if (e) setLoadErr('Data se nepodařilo načíst: ' + e.message)
       setVydaje(a.data || [])
       setJz(b.data || [])
@@ -80,6 +83,7 @@ export default function App() {
       setHarm(d.data || [])
       setNastaveni(n.data || [])
       setSmlouvy(sm.data || [])
+      setRozpocet(rz.data || [])
     })()
   }, [session])
 
@@ -134,6 +138,7 @@ export default function App() {
         {current.id === 'harmonogram' && (
           <Harmonogram rows={harm} setRows={setHarm} nastaveni={nastaveni} setNastaveni={setNastaveni} />
         )}
+        {current.id === 'rozpocet' && <Rozpocet rows={rozpocet} setRows={setRozpocet} vydaje={vydaje} />}
         {current.id === 'smlouvy' && <Smlouvy rows={smlouvy} setRows={setSmlouvy} />}
         {current.soon && (
           <div className="page"><div className="page-head"><h1>{current.label}</h1></div>
