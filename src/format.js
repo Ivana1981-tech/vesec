@@ -13,6 +13,7 @@ export function display(col, v) {
   if (col.type === 'money') return money(v)
   if (col.type === 'date') return date(v)
   if (col.type === 'bool') return v ? 'ano' : 'ne'
+  if (col.type === 'int') return v === null || v === undefined ? '' : String(v)
   if (col.type === 'select') return col.options.find((o) => o.value === v)?.label ?? (v || '')
   return v ?? ''
 }

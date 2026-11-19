@@ -36,7 +36,7 @@ export default function DataTable({ table, cols, rows, setRows, title, defaultSo
     if (x === y) return 0
     if (x === null || x === undefined || x === '') return 1
     if (y === null || y === undefined || y === '') return -1
-    if (col.type === 'money') return Number(x) - Number(y)
+    if (col.type === 'money' || col.type === 'int') return Number(x) - Number(y)
     if (col.type === 'bool') return (x ? 1 : 0) - (y ? 1 : 0)
     return String(display(col, x)).localeCompare(String(display(col, y)), 'cs')
   }
@@ -54,7 +54,7 @@ export default function DataTable({ table, cols, rows, setRows, title, defaultSo
       } else if (c.type === 'date') {
         if (f.from) r = r.filter((row) => row[c.key] && row[c.key] >= f.from)
         if (f.to) r = r.filter((row) => row[c.key] && row[c.key] <= f.to)
-      } else if (c.type === 'money') {
+      } else if (c.type === 'money' || c.type === 'int') {
         const mn = parseMoney(f.min), mx = parseMoney(f.max)
         if (f.min !== undefined && f.min !== '' && !isNaN(mn)) r = r.filter((row) => Number(row[c.key]) >= mn)
         if (f.max !== undefined && f.max !== '' && !isNaN(mx)) r = r.filter((row) => Number(row[c.key]) <= mx)
@@ -91,6 +91,15 @@ export default function DataTable({ table, cols, rows, setRows, title, defaultSo
       return n
     }
     if (col.type === 'bool') return Boolean(value)
+    if (col.type === 'int') {
+      if (value === '' || value === undefined || value === null) {
+        if (col.required) throw new Error(`${col.label}: povinné pole`)
+        return null
+      }
+      const n = parseInt(String(value).replace(/\s/g, ''), 10)
+      if (isNaN(n)) throw new Error(`${col.label}: neplatné číslo`)
+      return n
+    }
     if (value === '' || value === undefined) {
       if (col.required) throw new Error(`${col.label}: povinné pole`)
       return null
@@ -149,7 +158,7 @@ export default function DataTable({ table, cols, rows, setRows, title, defaultSo
       <input
         autoFocus={autoFocus}
         type={col.type === 'date' ? 'date' : 'text'}
-        inputMode={col.type === 'money' ? 'decimal' : undefined}
+        inputMode={col.type === 'money' ? 'decimal' : col.type === 'int' ? 'numeric' : undefined}
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value)}
         onBlur={onCommit}
@@ -299,7 +308,7 @@ export default function DataTable({ table, cols, rows, setRows, title, defaultSo
                       <input type="date" value={f.to ?? ''} onChange={(e) => set({ to: e.target.value })} title="do" />
                     </th>
                   )
-                if (c.type === 'money')
+                if (c.type === 'money' || c.type === 'int')
                   return (
                     <th key={c.key} className="range">
                       <input placeholder="od" value={f.min ?? ''} onChange={(e) => set({ min: e.target.value })} />

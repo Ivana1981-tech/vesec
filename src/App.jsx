@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase, configOk } from './supabase'
 import DataTable from './DataTable'
 import Prehled from './Prehled'
+import Harmonogram from './Harmonogram'
 import { VYDAJE_COLS, JZ_COLS, UKOLY_COLS } from './columns'
 
 const MENU = [
@@ -9,7 +10,7 @@ const MENU = [
   { id: 'vydaje', label: 'Výdaje' },
   { id: 'jitka', label: 'Jitka' },
   { id: 'rozpocet', label: 'Rozpočet', soon: true },
-  { id: 'harmonogram', label: 'Harmonogram', soon: true },
+  { id: 'harmonogram', label: 'Harmonogram' },
   { id: 'ukoly', label: 'Úkoly' },
 ]
 
@@ -44,6 +45,8 @@ export default function App() {
   const [vydaje, setVydaje] = useState([])
   const [jz, setJz] = useState([])
   const [ukoly, setUkoly] = useState([])
+  const [harm, setHarm] = useState([])
+  const [nastaveni, setNastaveni] = useState([])
   const [loadErr, setLoadErr] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -58,16 +61,20 @@ export default function App() {
     if (!session) return
     ;(async () => {
       setLoadErr('')
-      const [a, b, c] = await Promise.all([
+      const [a, b, c, d, n] = await Promise.all([
         supabase.from('vydaje').select('*'),
         supabase.from('pohyby_jz').select('*'),
         supabase.from('ukoly').select('*'),
+        supabase.from('harmonogram').select('*'),
+        supabase.from('nastaveni').select('*'),
       ])
-      const e = a.error || b.error || c.error
+      const e = a.error || b.error || c.error || d.error || n.error
       if (e) setLoadErr('Data se nepodařilo načíst: ' + e.message)
       setVydaje(a.data || [])
       setJz(b.data || [])
       setUkoly(c.data || [])
+      setHarm(d.data || [])
+      setNastaveni(n.data || [])
     })()
   }, [session])
 
@@ -118,6 +125,9 @@ export default function App() {
             rowClass={(r) => (r.stav === 'hotovo' ? 'done' : r.termin && r.termin < today ? 'overdue' : '')}
             onSaved={ukolSaved}
           />
+        )}
+        {current.id === 'harmonogram' && (
+          <Harmonogram rows={harm} setRows={setHarm} nastaveni={nastaveni} setNastaveni={setNastaveni} />
         )}
         {current.soon && (
           <div className="page"><div className="page-head"><h1>{current.label}</h1></div>
