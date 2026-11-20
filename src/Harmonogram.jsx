@@ -176,6 +176,8 @@ export default function Harmonogram({ rows, setRows, nastaveni, setNastaveni }) 
     if (bad) setErr('Uložení selhalo: ' + bad.error.message + ' – obnov stránku.')
   }
 
+  const rng = (s, e) => (s ? `${fmtDate(iso(s))} – ${e ? fmtDate(iso(e)) : 'probíhá'}` : 'bez termínu')
+
   // Náhled během tažení
   const sh = (verze, id, date, isEnd) => {
     if (!drag || drag.verze !== verze || !date) return date
